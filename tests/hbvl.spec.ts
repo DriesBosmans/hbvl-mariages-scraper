@@ -13,21 +13,37 @@ test("scrapeHbvl", async ({ page }) => {
     SintTruiden = "sint-truiden",
     Maasmechelen = "maasmechelen",
   }
+  const ignoreList = [
+    "https://www.hbvl.be/cnt/dmf20230619_93249761",
+    "https://www.hbvl.be/cnt/dmf20230925_93876955",
+  ];
   const domain = "https://www.hbvl.be/";
   const area = "regio/";
   const urlEnd = "?t=limburgtrouwt";
   const locationKeys = Object.values(Locations);
   const filePath = "./marriages.csv";
-  fs.writeFile(filePath, "", () => {});
+  let counter = 0;
+  let marriageCsv;
+  fs.readFile(filePath, "UTF-8", (err, data) => {
+    if (err) throw err;
+    marriageCsv = data.toString();
+  });
+
   for (const key of locationKeys) {
     await page.goto(`${domain}${area}${key}${urlEnd}`);
     await acceptCookies(page);
     await loadFullPage(page);
     const urlList = await getMainUrlList(page);
-    let marriageCsv = "";
-    let counter = 0;
+
     for (const url of urlList) {
-      const data: string[] = await getContent(page, `${domain}${url}`);
+      if (marriageCsv.indexOf(url) > -1) continue;
+      let exit = false;
+      for (const ignoreUrl of ignoreList) {
+        if (url === ignoreUrl) exit = true;
+      }
+      if (exit) continue;
+
+      const data: string[] = await getContent(page, url);
       if (data.length < 1) continue;
       const cleanedContent = cleanContent(data);
       console.log(
@@ -35,11 +51,11 @@ test("scrapeHbvl", async ({ page }) => {
         " & ",
         cleanedContent.person2.name
       );
+      if (marriageCsv === "")
+        fs.appendFile(filePath, getHeaders(cleanedContent), () => {});
       marriageCsv += convertToCsv(cleanedContent);
       counter++;
       console.log(`${counter} marriages saved.`);
-      if (url === urlList[0])
-        fs.appendFile(filePath, getHeaders(cleanedContent), () => {});
       fs.appendFile(filePath, convertToCsv(cleanedContent), () => {});
     }
   }
@@ -70,12 +86,16 @@ const getMainUrlList = async (page: Page): Promise<string[]> => {
   const anchorTagArray = await page
     .locator("section > div > div > ul > li > a")
     .all();
-  const hrefArray: string[] = [];
+
+  const hrefs: string[] = [];
   for (const anchor of anchorTagArray) {
-    const href = await anchor.getAttribute("href");
-    hrefArray.push(href as string);
+    const textContent = (await anchor.getAttribute(
+      "data-vr-contentbox"
+    )) as string;
+    if (textContent.indexOf("Pas getrouwd") === -1) continue;
+    hrefs.push((await anchor.getAttribute("data-vr-contentbox-url")) as string);
   }
-  return hrefArray;
+  return hrefs;
 };
 
 const getContent = async (page: Page, url: string): Promise<string[]> => {
@@ -144,11 +164,16 @@ const cleanContent = (content: string[]): Marriage => {
 };
 
 const getPersonInfo = (person: string): Person => {
-  const name = person.split("(")[0].trim();
-  const age = person.split("(")[1].split(")")[0];
-  const location = person.split("uit ")[1].split(",")[0].trim();
-  const hasJob = person.indexOf(", ") > -1;
-  const job = hasJob ? person.split(", ")[1].trim() : "";
+  const name = person.indexOf("(") > -1 ? person.split("(")[0].trim() : person;
+  const age =
+    person.indexOf("(") > -1 && person.indexOf(")") > -1
+      ? person.split("(")[1].split(")")[0]
+      : person;
+  const location =
+    person.indexOf("uit ") > -1
+      ? person.split("uit ")[1].split(",")[0].trim()
+      : person;
+  const job = person.indexOf(", ") > -1 ? person.split(", ")[1].trim() : person;
   return { name, age, location, job };
 };
 
