@@ -1,5 +1,5 @@
 Who's got married recently?
-This script scrapes the newspaper Hbvl's recently married section so you can find out too!
+This script scrapes the newspaper Hbvl's recently married section, so you can find out too!
 
 It outputs the following data in csv format:
 - Location
